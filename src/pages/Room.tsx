@@ -1,7 +1,6 @@
-
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { useToast } from "@/components/ui/sonner";
+import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/shared/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -18,7 +17,6 @@ const Room = () => {
   const { id: roomId } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const toast = useToast();
   
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [name, setName] = useState("");
