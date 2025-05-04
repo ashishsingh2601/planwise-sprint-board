@@ -3,13 +3,16 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
+const roomRoutes = require('./routes/roomRoutes');
+const { setupSocketHandlers } = require('./socket/socketHandlers');
 
 const app = express();
+
+// Configure CORS correctly
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? 'https://your-production-url.com' 
-    : 'http://localhost:5173',
-  methods: ["GET", "POST"]
+  origin: ['http://localhost:5173', 'https://your-production-url.com'],
+  methods: ["GET", "POST"],
+  credentials: true
 }));
 
 app.use(express.json());
@@ -18,231 +21,22 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' 
-      ? 'https://your-production-url.com' 
-      : 'http://localhost:5173',
-    methods: ["GET", "POST"]
+    origin: ['http://localhost:5173', 'https://your-production-url.com'],
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
-// Store rooms in memory (in production, use a database)
-const rooms = new Map();
-
-// Socket.io for real-time communication
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-  
-  // Handle joining a room
-  socket.on('join-room', ({ roomId, user }) => {
-    console.log(`User ${user.name} joining room ${roomId}`);
-    
-    // Add user to room
-    if (!rooms.has(roomId)) {
-      // Create new room if it doesn't exist
-      rooms.set(roomId, {
-        id: roomId,
-        participants: [user],
-        issues: [],
-        votes: [],
-        revealVotes: false
-      });
-    } else {
-      // Add participant to existing room
-      const room = rooms.get(roomId);
-      const existingUserIndex = room.participants.findIndex(p => p.id === user.id);
-      
-      if (existingUserIndex >= 0) {
-        // Update existing user
-        room.participants[existingUserIndex] = user;
-      } else {
-        // Add new user
-        room.participants.push(user);
-      }
-    }
-    
-    // Join socket to room
-    socket.join(roomId);
-    
-    // Notify room members about the update
-    io.to(roomId).emit('room-updated', rooms.get(roomId));
-  });
-  
-  // Leave room
-  socket.on('leave-room', ({ roomId, userId }) => {
-    console.log(`User ${userId} leaving room ${roomId}`);
-    
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      
-      // Remove user from participants
-      room.participants = room.participants.filter(p => p.id !== userId);
-      
-      // If room is empty, delete it
-      if (room.participants.length === 0) {
-        rooms.delete(roomId);
-      } else {
-        // If the host left, assign a new host
-        const hostIndex = room.participants.findIndex(p => p.isHost);
-        if (hostIndex === -1 && room.participants.length > 0) {
-          room.participants[0].isHost = true;
-        }
-        
-        // Remove user votes
-        room.votes = room.votes.filter(v => v.userId !== userId);
-        
-        // Notify remaining participants
-        io.to(roomId).emit('room-updated', room);
-      }
-    }
-    
-    // Disconnect from room
-    socket.leave(roomId);
-  });
-  
-  // Handle room actions
-  socket.on('upload-issues', ({ roomId, issues }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      
-      // Format and add issues
-      const newIssues = issues.map((issue, index) => ({
-        id: `issue_${Date.now()}_${index}`,
-        key: issue.key || `ISSUE-${index + 1}`,
-        title: issue.title || `Issue ${index + 1}`,
-        description: issue.description,
-      }));
-      
-      room.issues = [...room.issues, ...newIssues];
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  socket.on('select-issue', ({ roomId, issueId }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      room.currentIssueId = issueId;
-      room.revealVotes = false;
-      room.votes = room.votes.filter(vote => vote.issueId !== issueId);
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  socket.on('submit-vote', ({ roomId, vote }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      
-      // Remove any existing votes by this user for this issue
-      const otherVotes = room.votes.filter(
-        v => !(v.userId === vote.userId && v.issueId === vote.issueId)
-      );
-      
-      room.votes = [...otherVotes, vote];
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  socket.on('reveal-votes', ({ roomId }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      room.revealVotes = true;
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  socket.on('finalize-estimation', ({ roomId, issueId, value }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      
-      room.issues = room.issues.map(issue => {
-        if (issue.id === issueId) {
-          return { ...issue, estimation: value };
-        }
-        return issue;
-      });
-      
-      room.currentIssueId = undefined;
-      room.revealVotes = false;
-      
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  socket.on('transfer-host', ({ roomId, newHostId }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      
-      room.participants = room.participants.map(p => ({
-        ...p,
-        isHost: p.id === newHostId,
-      }));
-      
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  socket.on('remove-participant', ({ roomId, userId }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      
-      room.participants = room.participants.filter(p => p.id !== userId);
-      room.votes = room.votes.filter(v => v.userId !== userId);
-      
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  socket.on('modify-vote', ({ roomId, userId, issueId, value }) => {
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      
-      const otherVotes = room.votes.filter(
-        v => !(v.userId === userId && v.issueId === issueId)
-      );
-      
-      room.votes = [...otherVotes, { userId, issueId, value }];
-      io.to(roomId).emit('room-updated', room);
-    }
-  });
-  
-  // Handle get room data
-  socket.on('get-room', ({ roomId }, callback) => {
-    if (rooms.has(roomId)) {
-      callback({ success: true, room: rooms.get(roomId) });
-    } else {
-      callback({ success: false, message: 'Room not found' });
-    }
-  });
-  
-  // Handle disconnection
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
+// Add root route
+app.get('/', (req, res) => {
+  res.json({ message: 'Planwise API is running' });
 });
 
-// API endpoints
-app.get('/api/room/:id', (req, res) => {
-  const { id } = req.params;
-  
-  if (rooms.has(id)) {
-    res.json({ success: true, room: rooms.get(id) });
-  } else {
-    res.status(404).json({ success: false, message: 'Room not found' });
-  }
-});
+// Use routes
+app.use('/api/room', roomRoutes);
 
-app.post('/api/room', (req, res) => {
-  const roomId = `room_${Math.random().toString(36).substr(2, 9)}`;
-  const room = {
-    id: roomId,
-    participants: [],
-    issues: [],
-    votes: [],
-    revealVotes: false
-  };
-  
-  rooms.set(roomId, room);
-  res.json({ success: true, roomId });
-});
+// Set up socket handlers
+setupSocketHandlers(io);
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

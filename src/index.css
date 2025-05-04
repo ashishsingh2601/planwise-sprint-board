@@ -50,22 +50,26 @@
   z-index: 50 !important;
 }
 
-/* Dialog Content Background Fix */
-.DialogContent {
+/* Dialog Content Background Fix - More specific selectors */
+.DialogContent,
+[role="dialog"],
+[data-radix-dialog-content] {
   background-color: white !important;
 }
 
-/* Fixing dialog backgrounds */
-[role="dialog"] {
-  background-color: hsl(var(--background)) !important;
-}
-
-/* Make sure dialog content has a white background */
-[data-radix-dialog-content] {
+/* Enhanced dialog background fixes */
+.DialogContent,
+[data-state="open"][role="dialog"],
+[data-radix-dialog-content][data-state="open"] {
   background-color: white !important;
 }
 
 /* Fix for dialog overlay visibility */
 [data-radix-dialog-overlay] {
   background-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Ensure dialogs have correct backgrounds */
+.Dialog {
+  background-color: white !important;
 }

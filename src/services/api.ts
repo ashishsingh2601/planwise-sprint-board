@@ -10,10 +10,15 @@ const API_BASE_URL = import.meta.env.PROD
 // Socket.io connection
 let socket: Socket | null = null;
 
-// Connect to Socket.io server
+// Connect to Socket.io server with proper options
 const connectSocket = (): Socket => {
   if (!socket) {
-    socket = io(API_BASE_URL);
+    socket = io(API_BASE_URL, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
     
     socket.on('connect', () => {
       console.log('Connected to server via Socket.io');
