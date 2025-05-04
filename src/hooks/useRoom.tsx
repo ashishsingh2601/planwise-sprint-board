@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Room, User, Issue, Vote, EstimationSummary } from "@/types";
 import { api } from "@/services/api";
@@ -13,14 +12,15 @@ export const useRoom = () => {
   // Create a new room
   const createRoom = async (): Promise<string> => {
     setIsLoading(true);
+    setError(null);
     try {
       const { roomId } = await api.createRoom();
       setIsLoading(false);
       return roomId;
-    } catch (err) {
+    } catch (err: any) {
       setError("Failed to create room");
       setIsLoading(false);
-      toast.error("Failed to create room");
+      toast.error(`Failed to create room: ${err.message || 'Unknown error'}`);
       throw err;
     }
   };
@@ -28,6 +28,7 @@ export const useRoom = () => {
   // Join a room
   const joinRoom = async (roomId: string, userName: string): Promise<void> => {
     setIsLoading(true);
+    setError(null);
     try {
       const { user, room } = await api.joinRoom(roomId, userName);
       setCurrentUser(user);
@@ -39,10 +40,10 @@ export const useRoom = () => {
         console.log("Room update received in hook:", updatedRoom);
         setRoom(updatedRoom);
       });
-    } catch (err) {
-      setError("Failed to join room");
+    } catch (err: any) {
+      setError(err.message || "Failed to join room");
       setIsLoading(false);
-      toast.error("Failed to join room");
+      toast.error(`Failed to join room: ${err.message || 'Unknown error'}`);
       throw err;
     }
   };
@@ -254,8 +255,35 @@ export const useRoom = () => {
     error,
     createRoom,
     joinRoom,
-    leaveRoom,
-    uploadIssues,
+    leaveRoom: async (): Promise<void> => {
+      if (!room || !currentUser) return;
+      
+      try {
+        await api.leaveRoom(room.id, currentUser.id);
+        
+        // Stop listening for room updates
+        api.stopListening(room.id);
+        
+        setRoom(null);
+        setCurrentUser(null);
+      } catch (err) {
+        toast.error("Failed to leave room");
+      }
+    },
+    uploadIssues: async (issues: Partial<Issue>[]): Promise<void> => {
+      if (!room) return;
+      
+      setIsLoading(true);
+      try {
+        await api.uploadIssues(room.id, issues);
+        setIsLoading(false);
+        toast.success("Issues uploaded successfully");
+      } catch (err) {
+        setError("Failed to upload issues");
+        setIsLoading(false);
+        toast.error("Failed to upload issues");
+      }
+    },
     selectIssue,
     submitVote,
     revealVotes,

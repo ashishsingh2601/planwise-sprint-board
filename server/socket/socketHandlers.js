@@ -1,5 +1,9 @@
-
-const { getRooms } = require('../services/roomService');
+const { 
+  getRooms, 
+  getRoomData, 
+  addParticipantToRoom, 
+  removeParticipantFromRoom 
+} = require('../services/roomService');
 
 // Set up socket handlers
 const setupSocketHandlers = (io) => {
@@ -14,62 +18,26 @@ const setupSocketHandlers = (io) => {
       console.log(`User ${user.name} joining room ${roomId}`);
       
       // Add user to room
-      if (!rooms.has(roomId)) {
-        // Create new room if it doesn't exist
-        rooms.set(roomId, {
-          id: roomId,
-          participants: [user],
-          issues: [],
-          votes: [],
-          revealVotes: false
-        });
-      } else {
-        // Add participant to existing room
-        const room = rooms.get(roomId);
-        const existingUserIndex = room.participants.findIndex(p => p.id === user.id);
+      const result = addParticipantToRoom(roomId, user);
+      
+      if (result.success) {
+        // Join socket to room
+        socket.join(roomId);
         
-        if (existingUserIndex >= 0) {
-          // Update existing user
-          room.participants[existingUserIndex] = user;
-        } else {
-          // Add new user
-          room.participants.push(user);
-        }
+        // Notify room members about the update
+        io.to(roomId).emit('room-updated', result.room);
       }
-      
-      // Join socket to room
-      socket.join(roomId);
-      
-      // Notify room members about the update
-      io.to(roomId).emit('room-updated', rooms.get(roomId));
     });
     
     // Leave room
     socket.on('leave-room', ({ roomId, userId }) => {
       console.log(`User ${userId} leaving room ${roomId}`);
       
-      if (rooms.has(roomId)) {
-        const room = rooms.get(roomId);
-        
-        // Remove user from participants
-        room.participants = room.participants.filter(p => p.id !== userId);
-        
-        // If room is empty, delete it
-        if (room.participants.length === 0) {
-          rooms.delete(roomId);
-        } else {
-          // If the host left, assign a new host
-          const hostIndex = room.participants.findIndex(p => p.isHost);
-          if (hostIndex === -1 && room.participants.length > 0) {
-            room.participants[0].isHost = true;
-          }
-          
-          // Remove user votes
-          room.votes = room.votes.filter(v => v.userId !== userId);
-          
-          // Notify remaining participants
-          io.to(roomId).emit('room-updated', room);
-        }
+      const result = removeParticipantFromRoom(roomId, userId);
+      
+      if (result.success && result.room) {
+        // Notify remaining participants
+        io.to(roomId).emit('room-updated', result.room);
       }
       
       // Disconnect from room
@@ -183,11 +151,8 @@ const setupSocketHandlers = (io) => {
     
     // Handle get room data
     socket.on('get-room', ({ roomId }, callback) => {
-      if (rooms.has(roomId)) {
-        callback({ success: true, room: rooms.get(roomId) });
-      } else {
-        callback({ success: false, message: 'Room not found' });
-      }
+      const result = getRoomData(roomId);
+      callback(result);
     });
     
     // Handle disconnection

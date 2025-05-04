@@ -1,4 +1,3 @@
-
 import { Issue, Room, User, Vote } from "@/types";
 import { io, Socket } from "socket.io-client";
 
@@ -62,7 +61,10 @@ export const api = {
     try {
       const response = await fetch(`${API_BASE_URL}/api/room`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
       });
       
       const data = await response.json();
@@ -89,7 +91,12 @@ export const api = {
       return new Promise((resolve, reject) => {
         // First check if room exists
         socket.emit('get-room', { roomId }, (response: any) => {
-          const isFirstUser = !response.success || response.room.participants.length === 0;
+          if (!response.success) {
+            reject(new Error('Room not found'));
+            return;
+          }
+          
+          const isFirstUser = response.room.participants.length === 0;
           
           // Create user object
           const user: User = {

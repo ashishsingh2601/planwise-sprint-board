@@ -4,27 +4,28 @@
 @tailwind utilities;
 
 :root {
-  --planwise-purple: #8a63d2;
-  --planwise-light-purple: #f0ebf8;
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
+  --planwise-purple: #6d61b5;
+  --planwise-light-purple: #ede9fe;
 }
 
-@layer base {
-  body {
-    @apply text-foreground bg-background;
-  }
+/* Dialog styles fix */
+.DialogOverlay,
+[data-radix-dialog-overlay] {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(1px);
 }
 
-/* Card flip animation */
+.DialogContent,
+[data-radix-dialog-content] {
+  background-color: white !important;
+}
+
+/* Add styling for cards */
 .flip-card {
   perspective: 1000px;
-  transform-style: preserve-3d;
 }
 
 .flip-card-inner {
-  position: relative;
-  width: 100%;
   transition: transform 0.6s;
   transform-style: preserve-3d;
 }
@@ -38,38 +39,35 @@
   position: absolute;
   width: 100%;
   height: 100%;
+  -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+.flip-card-front {
+  transform: rotateY(0deg);
 }
 
 .flip-card-back {
   transform: rotateY(180deg);
 }
 
-/* Fix for Dialog background */
-[data-radix-popper-content-wrapper] {
-  z-index: 50 !important;
+/* Custom colors */
+.text-planwise-purple {
+  color: var(--planwise-purple);
 }
 
-/* Dialog Content Background Fix - More specific selectors */
-.DialogContent,
-[role="dialog"],
-[data-radix-dialog-content] {
-  background-color: white !important;
+.bg-planwise-purple {
+  background-color: var(--planwise-purple);
 }
 
-/* Enhanced dialog background fixes */
-.DialogContent,
-[data-state="open"][role="dialog"],
-[data-radix-dialog-content][data-state="open"] {
-  background-color: white !important;
+.bg-planwise-light-purple {
+  background-color: var(--planwise-light-purple);
 }
 
-/* Fix for dialog overlay visibility */
-[data-radix-dialog-overlay] {
-  background-color: rgba(0, 0, 0, 0.5) !important;
+.text-planwise-light-purple {
+  color: var(--planwise-light-purple);
 }
 
-/* Ensure dialogs have correct backgrounds */
-.Dialog {
-  background-color: white !important;
+.border-planwise-purple {
+  border-color: var(--planwise-purple);
 }

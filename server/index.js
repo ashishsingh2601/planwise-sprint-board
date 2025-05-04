@@ -8,9 +8,9 @@ const { setupSocketHandlers } = require('./socket/socketHandlers');
 
 const app = express();
 
-// Configure CORS correctly
+// Configure CORS correctly - make sure to add all necessary origins
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://your-production-url.com'],
+  origin: ['http://localhost:5173', 'https://your-production-url.com', '*'],
   methods: ["GET", "POST"],
   credentials: true
 }));
@@ -21,7 +21,7 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:5173', 'https://your-production-url.com'],
+    origin: ['http://localhost:5173', 'https://your-production-url.com', '*'],
     methods: ["GET", "POST"],
     credentials: true
   }

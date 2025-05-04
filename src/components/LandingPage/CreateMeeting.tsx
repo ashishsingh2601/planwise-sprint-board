@@ -31,8 +31,8 @@ const CreateMeeting: React.FC = () => {
       // Redirect to the room page with the user's name
       navigate(`/room/${roomId}?name=${encodeURIComponent(name)}`);
     } catch (error) {
-      toast.error("Failed to create meeting");
-      console.error(error);
+      console.error("Failed to create meeting:", error);
+      toast.error("Failed to create meeting. Please try again.");
     }
   };
 

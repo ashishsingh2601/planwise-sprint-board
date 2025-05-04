@@ -2,18 +2,19 @@
 {
   "name": "planwise-server",
   "version": "1.0.0",
-  "description": "Backend server for Planwise planning poker application",
+  "description": "Backend for Planwise planning poker app",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "socket.io": "^4.7.4"
+    "socket.io": "^4.7.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "nodemon": "^3.0.1"
   }
 }
