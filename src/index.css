@@ -6,6 +6,8 @@
 :root {
   --planwise-purple: #8a63d2;
   --planwise-light-purple: #f0ebf8;
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
 }
 
 @layer base {
@@ -41,4 +43,20 @@
 
 .flip-card-back {
   transform: rotateY(180deg);
+}
+
+/* Fix for Dialog background */
+[data-radix-popper-content-wrapper] {
+  background-color: white !important;
+  z-index: 50 !important;
+}
+
+/* Dialog Content Background Fix */
+.DialogContent {
+  background-color: white !important;
+}
+
+/* Add white background to dialog content */
+[role="dialog"] {
+  background-color: hsl(var(--background));
 }

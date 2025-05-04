@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Room, User, Issue, Vote, EstimationSummary } from "@/types";
 import { api } from "@/services/api";
@@ -338,6 +339,51 @@ export const useRoom = () => {
     
     return room.participants.find(p => p.id === userId);
   };
+
+  // Synchronize room data automatically
+  useEffect(() => {
+    let intervalId: number;
+    
+    // Function to check for room updates
+    const checkForRoomUpdates = async () => {
+      if (!room) return;
+      
+      try {
+        const updatedRoom = await api.checkForUpdates(room.id);
+        if (updatedRoom && JSON.stringify(updatedRoom) !== JSON.stringify(room)) {
+          // Only update the room if it has changed
+          console.log("Room updated from storage:", updatedRoom);
+          setRoom(updatedRoom);
+        }
+      } catch (err) {
+        console.error("Failed to check for room updates:", err);
+      }
+    };
+    
+    // Check for updates when the component mounts
+    if (room) {
+      checkForRoomUpdates();
+      
+      // Set up polling to check for updates periodically
+      intervalId = window.setInterval(checkForRoomUpdates, 2000);
+      
+      // Listen for room update events from the API
+      const handleRoomUpdated = (event: Event) => {
+        const customEvent = event as CustomEvent;
+        if (customEvent.detail?.roomId === room.id) {
+          console.log("Room update event received");
+          checkForRoomUpdates();
+        }
+      };
+      
+      window.addEventListener('refresh-room', handleRoomUpdated);
+      
+      return () => {
+        window.clearInterval(intervalId);
+        window.removeEventListener('refresh-room', handleRoomUpdated);
+      };
+    }
+  }, [room]);
 
   return {
     room,

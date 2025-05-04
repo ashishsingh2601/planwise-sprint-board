@@ -1,3 +1,4 @@
+
 import { Issue, Room, User, Vote } from "@/types";
 
 // Helper to simulate persistent data across browser reloads
@@ -14,10 +15,27 @@ const getStoredRoom = (roomId: string): Room | null => {
 const storeRoom = (room: Room): void => {
   try {
     localStorage.setItem(`planwise_room_${room.id}`, JSON.stringify(room));
+    // Broadcast room update to all tabs/windows
+    const event = new CustomEvent('room-updated', { 
+      detail: { roomId: room.id, timestamp: Date.now() } 
+    });
+    window.dispatchEvent(event);
   } catch (e) {
     console.error("Error storing room:", e);
   }
 };
+
+// Listen for room updates from other tabs/windows
+if (typeof window !== 'undefined') {
+  window.addEventListener('room-updated', (event: any) => {
+    const { roomId } = event.detail;
+    console.log('Room updated event received:', roomId);
+    // Custom event to notify React components about the room update
+    window.dispatchEvent(new CustomEvent('refresh-room', { 
+      detail: { roomId } 
+    }));
+  });
+}
 
 // This is a mock implementation that would be replaced with actual API calls
 export const api = {
@@ -107,6 +125,9 @@ export const api = {
   uploadIssues: async (roomId: string, issues: Partial<Issue>[]): Promise<Issue[]> => {
     console.log(`Uploading ${issues.length} issues to room ${roomId}`);
     
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) throw new Error("Room not found");
+    
     // Mock implementation - in reality this would send to the backend
     const formattedIssues = issues.map((issue, index) => ({
       id: `issue_${Math.random().toString(36).substr(2, 9)}`,
@@ -115,24 +136,67 @@ export const api = {
       description: issue.description,
     }));
     
+    // Add issues to the room
+    const updatedRoom: Room = {
+      ...existingRoom,
+      issues: [...existingRoom.issues, ...formattedIssues],
+    };
+    
+    storeRoom(updatedRoom);
+    
     return formattedIssues;
   },
 
   selectIssue: async (roomId: string, issueId: string): Promise<void> => {
     console.log(`Selecting issue ${issueId} in room ${roomId}`);
-    // Would call backend in real implementation
+    
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) return;
+    
+    const updatedRoom: Room = {
+      ...existingRoom,
+      currentIssueId: issueId,
+      revealVotes: false,
+      votes: existingRoom.votes.filter(vote => vote.issueId !== issueId),
+    };
+    
+    storeRoom(updatedRoom);
   },
 
   // Voting
   submitVote: async (roomId: string, vote: Omit<Vote, 'id'>): Promise<void> => {
     console.log(`Submitting vote in room ${roomId}:`, vote);
-    // Would call backend in real implementation
+    
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) return;
+    
+    // Remove any existing votes by this user for this issue
+    const otherVotes = existingRoom.votes.filter(
+      v => !(v.userId === vote.userId && v.issueId === vote.issueId)
+    );
+    
+    const updatedRoom: Room = {
+      ...existingRoom,
+      votes: [...otherVotes, vote],
+    };
+    
+    storeRoom(updatedRoom);
   },
   
   revealVotes: async (roomId: string): Promise<Vote[]> => {
     console.log(`Revealing votes in room ${roomId}`);
-    // Would call backend in real implementation
-    return [];
+    
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) return [];
+    
+    const updatedRoom: Room = {
+      ...existingRoom,
+      revealVotes: true,
+    };
+    
+    storeRoom(updatedRoom);
+    
+    return existingRoom.votes.filter(vote => vote.issueId === existingRoom.currentIssueId);
   },
 
   finalizeEstimation: async (
@@ -141,18 +205,60 @@ export const api = {
     value: number
   ): Promise<void> => {
     console.log(`Finalizing estimation for issue ${issueId} with value ${value}`);
-    // Would call backend in real implementation
+    
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) return;
+    
+    const updatedIssues = existingRoom.issues.map(issue => {
+      if (issue.id === issueId) {
+        return { ...issue, estimation: value };
+      }
+      return issue;
+    });
+    
+    const updatedRoom: Room = {
+      ...existingRoom,
+      issues: updatedIssues,
+      currentIssueId: undefined,
+      revealVotes: false,
+    };
+    
+    storeRoom(updatedRoom);
   },
 
   // Host actions
   transferHost: async (roomId: string, newHostId: string): Promise<void> => {
     console.log(`Transferring host to user ${newHostId} in room ${roomId}`);
-    // Would call backend in real implementation
+    
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) return;
+    
+    const updatedParticipants = existingRoom.participants.map(p => ({
+      ...p,
+      isHost: p.id === newHostId,
+    }));
+    
+    const updatedRoom: Room = {
+      ...existingRoom,
+      participants: updatedParticipants,
+    };
+    
+    storeRoom(updatedRoom);
   },
   
   removeParticipant: async (roomId: string, userId: string): Promise<void> => {
     console.log(`Removing participant ${userId} from room ${roomId}`);
-    // Would call backend in real implementation
+    
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) return;
+    
+    const updatedRoom: Room = {
+      ...existingRoom,
+      participants: existingRoom.participants.filter(p => p.id !== userId),
+      votes: existingRoom.votes.filter(v => v.userId !== userId),
+    };
+    
+    storeRoom(updatedRoom);
   },
 
   modifyVote: async (
@@ -162,6 +268,24 @@ export const api = {
     value: number
   ): Promise<void> => {
     console.log(`Host modifying vote for user ${userId} on issue ${issueId} to ${value}`);
-    // Would call backend in real implementation
+    
+    const existingRoom = getStoredRoom(roomId);
+    if (!existingRoom) return;
+    
+    const otherVotes = existingRoom.votes.filter(
+      v => !(v.userId === userId && v.issueId === issueId)
+    );
+    
+    const updatedRoom: Room = {
+      ...existingRoom,
+      votes: [...otherVotes, { userId, issueId, value }],
+    };
+    
+    storeRoom(updatedRoom);
   },
+  
+  // New method to check for room updates
+  checkForUpdates: async (roomId: string): Promise<Room | null> => {
+    return getStoredRoom(roomId);
+  }
 };
