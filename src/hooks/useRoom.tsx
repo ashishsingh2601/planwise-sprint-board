@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Room, User, Issue, Vote, EstimationSummary } from "@/types";
 import { api } from "@/services/api";
@@ -9,7 +8,7 @@ interface UseRoomOptions {
   userName?: string;
 }
 
-export const useRoom = ({ roomId, userName }: UseRoomOptions = {}) => {
+export const useRoom = () => {
   const [room, setRoom] = useState<Room | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -42,6 +41,7 @@ export const useRoom = ({ roomId, userName }: UseRoomOptions = {}) => {
       setError("Failed to join room");
       setIsLoading(false);
       toast.error("Failed to join room");
+      throw err;
     }
   };
 
@@ -338,13 +338,6 @@ export const useRoom = ({ roomId, userName }: UseRoomOptions = {}) => {
     
     return room.participants.find(p => p.id === userId);
   };
-
-  // Auto-join room if roomId and userName are provided
-  useEffect(() => {
-    if (roomId && userName && !room && !currentUser) {
-      joinRoom(roomId, userName);
-    }
-  }, [roomId, userName]);
 
   return {
     room,

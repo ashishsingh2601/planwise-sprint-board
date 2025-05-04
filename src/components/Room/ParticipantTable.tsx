@@ -64,23 +64,30 @@ const ParticipantTable: React.FC<ParticipantTableProps> = ({
   
   return (
     <div className="w-full">
-      <h2 className="text-xl font-bold mb-6 text-center">Participants</h2>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {participants.map((participant) => (
-          <ParticipantCard
-            key={participant.id}
-            participant={participant}
-            hasVoted={hasVoted(participant.id)}
-            revealVotes={revealVotes}
-            vote={getVote(participant.id)}
-            isCurrentUser={participant.id === currentUserId}
-            isHost={isHost}
-            onTransferHost={isHost ? onTransferHost : undefined}
-            onRemoveParticipant={isHost ? onRemoveParticipant : undefined}
-            onModifyVote={isHost ? handleModifyVote : undefined}
-          />
-        ))}
-      </div>
+      <h2 className="text-xl font-bold mb-6 text-center">Participants ({participants.length})</h2>
+      
+      {participants.length > 0 ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {participants.map((participant) => (
+            <ParticipantCard
+              key={participant.id}
+              participant={participant}
+              hasVoted={hasVoted(participant.id)}
+              revealVotes={revealVotes}
+              vote={getVote(participant.id)}
+              isCurrentUser={participant.id === currentUserId}
+              isHost={isHost}
+              onTransferHost={isHost ? onTransferHost : undefined}
+              onRemoveParticipant={isHost ? onRemoveParticipant : undefined}
+              onModifyVote={isHost ? handleModifyVote : undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center text-gray-500 py-8">
+          No participants have joined yet
+        </div>
+      )}
       
       {/* Modify Vote Dialog */}
       <Dialog open={isModifyVoteOpen} onOpenChange={setIsModifyVoteOpen}>

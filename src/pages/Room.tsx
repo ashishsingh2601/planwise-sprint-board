@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
@@ -137,7 +138,10 @@ const Room = () => {
   // Automatically join room when roomId and name are available
   useEffect(() => {
     if (roomId && name && !currentUser && !nameDialogOpen) {
-      joinRoom(roomId, name);
+      joinRoom(roomId, name).catch(error => {
+        console.error("Failed to join room:", error);
+        toast.error("Failed to join room automatically");
+      });
     }
   }, [roomId, name, currentUser, nameDialogOpen]);
   
@@ -190,7 +194,14 @@ const Room = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
               <div className="mb-6 flex justify-between items-center">
-                <h2 className="text-2xl font-bold">Planning Room</h2>
+                <h2 className="text-2xl font-bold">
+                  Planning Room
+                  {room.participants.length > 0 && (
+                    <span className="text-base text-gray-500 ml-2">
+                      ({room.participants.length} {room.participants.length === 1 ? 'participant' : 'participants'})
+                    </span>
+                  )}
+                </h2>
                 {isHost && (
                   <IssueImport onImport={handleUploadIssues} />
                 )}
@@ -268,7 +279,7 @@ const Room = () => {
           }}>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <label htmlFor="name">Your Name</label>
+                <Label htmlFor="name">Your Name</Label>
                 <Input
                   id="name"
                   placeholder="Enter your name"

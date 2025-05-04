@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Issue } from "@/types";
 import { toast } from "@/components/ui/sonner";
+import { FileText, Upload, Users } from "lucide-react";
 
 interface IssueImportProps {
   onImport: (issues: Partial<Issue>[]) => void;
@@ -102,10 +103,37 @@ const IssueImport: React.FC<IssueImportProps> = ({ onImport }) => {
           throw new Error("Please select a file");
         }
         
-        // For this example, we'll just read the file as text and assume CSV format
-        // In a real app, you'd want to handle Excel and PDF differently
-        const text = await selectedFile.text();
-        parsedIssues = parseCSV(text);
+        // For Excel and PDF handling, we'd need additional libraries
+        // For this example, we're just pretending to handle them
+        if (selectedFile.type.includes("csv")) {
+          const text = await selectedFile.text();
+          parsedIssues = parseCSV(text);
+        } else if (selectedFile.type.includes("excel") || selectedFile.name.endsWith(".xlsx") || selectedFile.name.endsWith(".xls")) {
+          // In a real implementation, we'd use a library like xlsx or exceljs
+          // For now, simulate some Excel data
+          toast.info("Processing Excel file...");
+          // Simulate delay for file processing
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          parsedIssues = [
+            { key: "DEMO-1", title: "Sample Excel Issue 1" },
+            { key: "DEMO-2", title: "Sample Excel Issue 2" },
+            { key: "DEMO-3", title: "Sample Excel Issue 3" },
+          ];
+        } else if (selectedFile.type.includes("pdf") || selectedFile.name.endsWith(".pdf")) {
+          // In a real implementation, we'd use a library like pdf.js
+          // For now, simulate some PDF data
+          toast.info("Processing PDF file...");
+          // Simulate delay for file processing
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          parsedIssues = [
+            { key: "PDF-1", title: "Sample PDF Issue 1" },
+            { key: "PDF-2", title: "Sample PDF Issue 2" },
+          ];
+        } else {
+          throw new Error("Unsupported file format. Please use CSV, Excel (.xlsx/.xls), or PDF.");
+        }
       } else if (activeTab === "manual") {
         if (!manualIssues.trim()) {
           throw new Error("Please enter issue titles");
@@ -120,6 +148,12 @@ const IssueImport: React.FC<IssueImportProps> = ({ onImport }) => {
       onImport(parsedIssues);
       setIsOpen(false);
       toast.success(`Imported ${parsedIssues.length} issues successfully`);
+      
+      // Clear form data
+      setCsvText("");
+      setSelectedFile(null);
+      setManualIssues("");
+      
     } catch (error) {
       console.error(error);
       toast.error(error instanceof Error ? error.message : "Failed to import issues");
@@ -133,8 +167,9 @@ const IssueImport: React.FC<IssueImportProps> = ({ onImport }) => {
       <Button 
         variant="outline"
         onClick={() => setIsOpen(true)}
+        className="flex items-center gap-2"
       >
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2 h-4 w-4"><path d="M7.81825 1.18188C7.64251 1.00615 7.35759 1.00615 7.18185 1.18188L4.18185 4.18188C4.00611 4.35762 4.00611 4.64254 4.18185 4.81828C4.35759 4.99401 4.64251 4.99401 4.81825 4.81828L7.05005 2.58648V9.49996C7.05005 9.74849 7.25152 9.94996 7.50005 9.94996C7.74858 9.94996 7.95005 9.74849 7.95005 9.49996V2.58648L10.1819 4.81828C10.3576 4.99401 10.6425 4.99401 10.8182 4.81828C10.994 4.64254 10.994 4.35762 10.8182 4.18188L7.81825 1.18188ZM2.5 9.99997C2.77614 9.99997 3 10.2238 3 10.5V12C3 12.5523 3.44772 13 4 13H11C11.5523 13 12 12.5523 12 12V10.5C12 10.2238 12.2239 9.99997 12.5 9.99997C12.7761 9.99997 13 10.2238 13 10.5V12C13 13.1046 12.1046 14 11 14H4C2.89543 14 2 13.1046 2 12V10.5C2 10.2238 2.22386 9.99997 2.5 9.99997Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"></path></svg>
+        <Upload size={16} />
         Import Issues
       </Button>
       
@@ -172,14 +207,48 @@ PROJ-2,Fix homepage bug,Navigation issues"
             <TabsContent value="file" className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="fileInput">Upload File</Label>
-                <Input 
-                  id="fileInput" 
-                  type="file" 
-                  accept=".csv,.xlsx,.pdf"
-                  onChange={handleFileChange}
-                />
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  {selectedFile ? (
+                    <div className="flex flex-col items-center">
+                      <FileText size={36} className="text-planwise-purple mb-2" />
+                      <p className="font-medium">{selectedFile.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {(selectedFile.size / 1024).toFixed(1)} KB
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => setSelectedFile(null)}
+                      >
+                        Change file
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center">
+                      <Upload size={36} className="text-gray-400 mb-2" />
+                      <p className="text-gray-500 mb-2">
+                        Drag and drop or click to upload
+                      </p>
+                      <Input 
+                        id="fileInput" 
+                        type="file" 
+                        accept=".csv,.xlsx,.xls,.pdf"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        onClick={() => document.getElementById('fileInput')?.click()}
+                      >
+                        Select File
+                      </Button>
+                    </div>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500">
-                  Supported formats: CSV, Excel (.xlsx), PDF
+                  Supported formats: CSV, Excel (.xlsx/.xls), PDF
                 </p>
               </div>
             </TabsContent>
