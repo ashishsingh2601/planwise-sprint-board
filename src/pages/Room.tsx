@@ -5,6 +5,7 @@ import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/shared/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import ParticipantTable from "@/components/Room/ParticipantTable";
 import IssueList from "@/components/Room/IssueList";
 import IssueImport from "@/components/Room/IssueImport";
