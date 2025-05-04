@@ -4,11 +4,6 @@ import { Room, User, Issue, Vote, EstimationSummary } from "@/types";
 import { api } from "@/services/api";
 import { toast } from "@/components/ui/sonner";
 
-interface UseRoomOptions {
-  roomId?: string;
-  userName?: string;
-}
-
 export const useRoom = () => {
   const [room, setRoom] = useState<Room | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -38,6 +33,12 @@ export const useRoom = () => {
       setCurrentUser(user);
       setRoom(room);
       setIsLoading(false);
+      
+      // Start listening for room updates
+      api.listenForUpdates(roomId, updatedRoom => {
+        console.log("Room update received in hook:", updatedRoom);
+        setRoom(updatedRoom);
+      });
     } catch (err) {
       setError("Failed to join room");
       setIsLoading(false);
@@ -52,6 +53,10 @@ export const useRoom = () => {
     
     try {
       await api.leaveRoom(room.id, currentUser.id);
+      
+      // Stop listening for room updates
+      api.stopListening(room.id);
+      
       setRoom(null);
       setCurrentUser(null);
     } catch (err) {
@@ -65,11 +70,7 @@ export const useRoom = () => {
     
     setIsLoading(true);
     try {
-      const uploadedIssues = await api.uploadIssues(room.id, issues);
-      setRoom(prev => prev ? {
-        ...prev,
-        issues: [...prev.issues, ...uploadedIssues],
-      } : null);
+      await api.uploadIssues(room.id, issues);
       setIsLoading(false);
       toast.success("Issues uploaded successfully");
     } catch (err) {
@@ -85,12 +86,6 @@ export const useRoom = () => {
     
     try {
       await api.selectIssue(room.id, issueId);
-      setRoom(prev => prev ? {
-        ...prev,
-        currentIssueId: issueId,
-        revealVotes: false,
-        votes: prev.votes.filter(vote => vote.issueId !== issueId),
-      } : null);
     } catch (err) {
       toast.error("Failed to select issue");
     }
@@ -108,29 +103,6 @@ export const useRoom = () => {
       };
       
       await api.submitVote(room.id, vote);
-      
-      // Update local state optimistically
-      setRoom(prev => {
-        if (!prev) return null;
-        
-        const existingVoteIndex = prev.votes.findIndex(
-          v => v.userId === currentUser.id && v.issueId === room.currentIssueId
-        );
-        
-        let newVotes = [...prev.votes];
-        
-        if (existingVoteIndex >= 0) {
-          newVotes[existingVoteIndex] = vote;
-        } else {
-          newVotes.push(vote);
-        }
-        
-        return {
-          ...prev,
-          votes: newVotes,
-        };
-      });
-      
       toast.success("Vote submitted");
     } catch (err) {
       toast.error("Failed to submit vote");
@@ -143,7 +115,6 @@ export const useRoom = () => {
     
     try {
       await api.revealVotes(room.id);
-      setRoom(prev => prev ? { ...prev, revealVotes: true } : null);
     } catch (err) {
       toast.error("Failed to reveal votes");
     }
@@ -155,25 +126,6 @@ export const useRoom = () => {
     
     try {
       await api.finalizeEstimation(room.id, room.currentIssueId, value);
-      
-      setRoom(prev => {
-        if (!prev || !prev.currentIssueId) return prev;
-        
-        const updatedIssues = prev.issues.map(issue => {
-          if (issue.id === prev.currentIssueId) {
-            return { ...issue, estimation: value };
-          }
-          return issue;
-        });
-        
-        return {
-          ...prev,
-          issues: updatedIssues,
-          currentIssueId: undefined,
-          revealVotes: false,
-        };
-      });
-      
       toast.success(`Issue estimated with value ${value}`);
     } catch (err) {
       toast.error("Failed to finalize estimation");
@@ -186,20 +138,6 @@ export const useRoom = () => {
     
     try {
       await api.transferHost(room.id, userId);
-      
-      setRoom(prev => {
-        if (!prev) return null;
-        
-        const updatedParticipants = prev.participants.map(p => ({
-          ...p,
-          isHost: p.id === userId,
-        }));
-        
-        return {
-          ...prev,
-          participants: updatedParticipants,
-        };
-      });
       
       // Update current user if they're the one who just got host status
       if (currentUser.id === userId) {
@@ -220,17 +158,6 @@ export const useRoom = () => {
     
     try {
       await api.removeParticipant(room.id, userId);
-      
-      setRoom(prev => {
-        if (!prev) return null;
-        
-        return {
-          ...prev,
-          participants: prev.participants.filter(p => p.id !== userId),
-          votes: prev.votes.filter(v => v.userId !== userId),
-        };
-      });
-      
       toast.success("Participant removed");
     } catch (err) {
       toast.error("Failed to remove participant");
@@ -250,36 +177,6 @@ export const useRoom = () => {
     
     try {
       await api.modifyVote(room.id, userId, room.currentIssueId, value);
-      
-      setRoom(prev => {
-        if (!prev || !prev.currentIssueId) return prev;
-        
-        const existingVoteIndex = prev.votes.findIndex(
-          v => v.userId === userId && v.issueId === prev.currentIssueId
-        );
-        
-        let newVotes = [...prev.votes];
-        
-        if (existingVoteIndex >= 0) {
-          newVotes[existingVoteIndex] = {
-            userId,
-            issueId: prev.currentIssueId,
-            value,
-          };
-        } else {
-          newVotes.push({
-            userId,
-            issueId: prev.currentIssueId,
-            value,
-          });
-        }
-        
-        return {
-          ...prev,
-          votes: newVotes,
-        };
-      });
-      
       toast.success("Vote modified");
     } catch (err) {
       toast.error("Failed to modify vote");
@@ -340,50 +237,15 @@ export const useRoom = () => {
     return room.participants.find(p => p.id === userId);
   };
 
-  // Synchronize room data automatically
+  // When component unmounts, stop listening and leave the room
   useEffect(() => {
-    let intervalId: number;
-    
-    // Function to check for room updates
-    const checkForRoomUpdates = async () => {
-      if (!room) return;
-      
-      try {
-        const updatedRoom = await api.checkForUpdates(room.id);
-        if (updatedRoom && JSON.stringify(updatedRoom) !== JSON.stringify(room)) {
-          // Only update the room if it has changed
-          console.log("Room updated from storage:", updatedRoom);
-          setRoom(updatedRoom);
-        }
-      } catch (err) {
-        console.error("Failed to check for room updates:", err);
+    return () => {
+      if (room && currentUser) {
+        api.leaveRoom(room.id, currentUser.id);
+        api.stopListening(room.id);
       }
     };
-    
-    // Check for updates when the component mounts
-    if (room) {
-      checkForRoomUpdates();
-      
-      // Set up polling to check for updates periodically
-      intervalId = window.setInterval(checkForRoomUpdates, 2000);
-      
-      // Listen for room update events from the API
-      const handleRoomUpdated = (event: Event) => {
-        const customEvent = event as CustomEvent;
-        if (customEvent.detail?.roomId === room.id) {
-          console.log("Room update event received");
-          checkForRoomUpdates();
-        }
-      };
-      
-      window.addEventListener('refresh-room', handleRoomUpdated);
-      
-      return () => {
-        window.clearInterval(intervalId);
-        window.removeEventListener('refresh-room', handleRoomUpdated);
-      };
-    }
-  }, [room]);
+  }, [room, currentUser]);
 
   return {
     room,

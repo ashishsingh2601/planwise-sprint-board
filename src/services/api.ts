@@ -1,202 +1,179 @@
 
 import { Issue, Room, User, Vote } from "@/types";
+import { io, Socket } from "socket.io-client";
 
-// Helper to simulate persistent data across browser reloads
-const getStoredRoom = (roomId: string): Room | null => {
-  try {
-    const storedRoom = localStorage.getItem(`planwise_room_${roomId}`);
-    return storedRoom ? JSON.parse(storedRoom) : null;
-  } catch (e) {
-    console.error("Error retrieving stored room:", e);
-    return null;
-  }
-};
+// API base URL - configure based on environment
+const API_BASE_URL = import.meta.env.PROD 
+  ? 'https://your-production-url.com'  // Update with actual production URL
+  : 'http://localhost:3001';
 
-const storeRoom = (room: Room): void => {
-  try {
-    localStorage.setItem(`planwise_room_${room.id}`, JSON.stringify(room));
-    // Broadcast room update to all tabs/windows
-    const event = new CustomEvent('room-updated', { 
-      detail: { roomId: room.id, timestamp: Date.now() } 
+// Socket.io connection
+let socket: Socket | null = null;
+
+// Connect to Socket.io server
+const connectSocket = (): Socket => {
+  if (!socket) {
+    socket = io(API_BASE_URL);
+    
+    socket.on('connect', () => {
+      console.log('Connected to server via Socket.io');
     });
-    window.dispatchEvent(event);
-  } catch (e) {
-    console.error("Error storing room:", e);
+    
+    socket.on('disconnect', () => {
+      console.log('Disconnected from server');
+    });
+    
+    socket.on('error', (error) => {
+      console.error('Socket.io error:', error);
+    });
+  }
+  
+  return socket;
+};
+
+// Helper to handle room events
+const setupRoomListeners = (roomId: string, callback: (room: Room) => void): void => {
+  const socket = connectSocket();
+  
+  // Listen for room updates
+  socket.on('room-updated', (updatedRoom: Room) => {
+    if (updatedRoom.id === roomId) {
+      console.log('Room updated event received:', updatedRoom);
+      callback(updatedRoom);
+    }
+  });
+};
+
+// Remove room listeners when leaving
+const removeRoomListeners = (roomId: string): void => {
+  if (socket) {
+    socket.off('room-updated');
   }
 };
 
-// Listen for room updates from other tabs/windows
-if (typeof window !== 'undefined') {
-  window.addEventListener('room-updated', (event: any) => {
-    const { roomId } = event.detail;
-    console.log('Room updated event received:', roomId);
-    // Custom event to notify React components about the room update
-    window.dispatchEvent(new CustomEvent('refresh-room', { 
-      detail: { roomId } 
-    }));
-  });
-}
-
-// This is a mock implementation that would be replaced with actual API calls
 export const api = {
   // Room management
   createRoom: async (): Promise<{ roomId: string }> => {
-    // In a real implementation, this would call the backend
-    const roomId = `room_${Math.random().toString(36).substr(2, 9)}`;
-    console.log("Creating room with ID:", roomId);
-    
-    // Initialize the room in storage
-    const initialRoom: Room = {
-      id: roomId,
-      participants: [],
-      issues: [],
-      votes: [],
-      revealVotes: false,
-    };
-    
-    storeRoom(initialRoom);
-    
-    return { roomId };
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/room`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to create room');
+      }
+      
+      console.log("Created room with ID:", data.roomId);
+      return { roomId: data.roomId };
+    } catch (error) {
+      console.error('Error creating room:', error);
+      throw error;
+    }
   },
 
   joinRoom: async (roomId: string, userName: string): Promise<{ user: User; room: Room }> => {
-    // This would call the backend in a real implementation
-    const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
-    console.log(`User ${userName} (${userId}) joining room ${roomId}`);
-    
-    // Get existing room or create new one
-    const existingRoom = getStoredRoom(roomId) || {
-      id: roomId,
-      participants: [],
-      issues: [],
-      votes: [],
-      revealVotes: false,
-    };
-    
-    // Create the user
-    const user: User = {
-      id: userId,
-      name: userName,
-      isHost: existingRoom.participants.length === 0, // First user becomes host
-    };
-    
-    // Add the user to the room
-    const updatedRoom: Room = {
-      ...existingRoom,
-      participants: [...existingRoom.participants, user],
-    };
-    
-    // Store the updated room
-    storeRoom(updatedRoom);
-    
-    return { user, room: updatedRoom };
+    try {
+      const socket = connectSocket();
+      
+      // Generate a user ID
+      const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
+      
+      return new Promise((resolve, reject) => {
+        // First check if room exists
+        socket.emit('get-room', { roomId }, (response: any) => {
+          const isFirstUser = !response.success || response.room.participants.length === 0;
+          
+          // Create user object
+          const user: User = {
+            id: userId,
+            name: userName,
+            isHost: isFirstUser, // First user becomes host
+          };
+          
+          // Join the room
+          socket.emit('join-room', { roomId, user });
+          
+          // Get updated room data
+          socket.emit('get-room', { roomId }, (finalResponse: any) => {
+            if (finalResponse.success) {
+              resolve({ user, room: finalResponse.room });
+            } else {
+              reject(new Error('Failed to join room'));
+            }
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Error joining room:', error);
+      throw error;
+    }
   },
   
   leaveRoom: async (roomId: string, userId: string): Promise<void> => {
-    console.log(`User ${userId} leaving room ${roomId}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return;
-    
-    // Remove the user
-    const updatedParticipants = existingRoom.participants.filter(p => p.id !== userId);
-    
-    // Find a new host if the leaving user was the host
-    const leavingUser = existingRoom.participants.find(p => p.id === userId);
-    let needNewHost = leavingUser?.isHost && updatedParticipants.length > 0;
-    
-    if (needNewHost) {
-      updatedParticipants[0].isHost = true;
+    try {
+      const socket = connectSocket();
+      socket.emit('leave-room', { roomId, userId });
+      removeRoomListeners(roomId);
+    } catch (error) {
+      console.error('Error leaving room:', error);
+      throw error;
     }
-    
-    // Remove votes by this user
-    const updatedVotes = existingRoom.votes.filter(v => v.userId !== userId);
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      participants: updatedParticipants,
-      votes: updatedVotes,
-    };
-    
-    storeRoom(updatedRoom);
   },
 
   // Issue management
   uploadIssues: async (roomId: string, issues: Partial<Issue>[]): Promise<Issue[]> => {
-    console.log(`Uploading ${issues.length} issues to room ${roomId}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) throw new Error("Room not found");
-    
-    // Mock implementation - in reality this would send to the backend
-    const formattedIssues = issues.map((issue, index) => ({
-      id: `issue_${Math.random().toString(36).substr(2, 9)}`,
-      key: issue.key || `ISSUE-${index + 1}`,
-      title: issue.title || `Issue ${index + 1}`,
-      description: issue.description,
-    }));
-    
-    // Add issues to the room
-    const updatedRoom: Room = {
-      ...existingRoom,
-      issues: [...existingRoom.issues, ...formattedIssues],
-    };
-    
-    storeRoom(updatedRoom);
-    
-    return formattedIssues;
+    try {
+      const socket = connectSocket();
+      socket.emit('upload-issues', { roomId, issues });
+      
+      // Return a fake promise as socket.io is asynchronous
+      return issues.map((issue, index) => ({
+        id: `issue_temp_${Date.now()}_${index}`,
+        key: issue.key || `ISSUE-${index + 1}`,
+        title: issue.title || `Issue ${index + 1}`,
+        description: issue.description,
+      })) as Issue[];
+    } catch (error) {
+      console.error('Error uploading issues:', error);
+      throw error;
+    }
   },
 
   selectIssue: async (roomId: string, issueId: string): Promise<void> => {
-    console.log(`Selecting issue ${issueId} in room ${roomId}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return;
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      currentIssueId: issueId,
-      revealVotes: false,
-      votes: existingRoom.votes.filter(vote => vote.issueId !== issueId),
-    };
-    
-    storeRoom(updatedRoom);
+    try {
+      const socket = connectSocket();
+      socket.emit('select-issue', { roomId, issueId });
+    } catch (error) {
+      console.error('Error selecting issue:', error);
+      throw error;
+    }
   },
 
   // Voting
   submitVote: async (roomId: string, vote: Omit<Vote, 'id'>): Promise<void> => {
-    console.log(`Submitting vote in room ${roomId}:`, vote);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return;
-    
-    // Remove any existing votes by this user for this issue
-    const otherVotes = existingRoom.votes.filter(
-      v => !(v.userId === vote.userId && v.issueId === vote.issueId)
-    );
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      votes: [...otherVotes, vote],
-    };
-    
-    storeRoom(updatedRoom);
+    try {
+      const socket = connectSocket();
+      socket.emit('submit-vote', { roomId, vote });
+    } catch (error) {
+      console.error('Error submitting vote:', error);
+      throw error;
+    }
   },
   
   revealVotes: async (roomId: string): Promise<Vote[]> => {
-    console.log(`Revealing votes in room ${roomId}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return [];
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      revealVotes: true,
-    };
-    
-    storeRoom(updatedRoom);
-    
-    return existingRoom.votes.filter(vote => vote.issueId === existingRoom.currentIssueId);
+    try {
+      const socket = connectSocket();
+      socket.emit('reveal-votes', { roomId });
+      
+      // This is a placeholder as socket.io doesn't return values directly
+      return [];
+    } catch (error) {
+      console.error('Error revealing votes:', error);
+      throw error;
+    }
   },
 
   finalizeEstimation: async (
@@ -204,61 +181,34 @@ export const api = {
     issueId: string, 
     value: number
   ): Promise<void> => {
-    console.log(`Finalizing estimation for issue ${issueId} with value ${value}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return;
-    
-    const updatedIssues = existingRoom.issues.map(issue => {
-      if (issue.id === issueId) {
-        return { ...issue, estimation: value };
-      }
-      return issue;
-    });
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      issues: updatedIssues,
-      currentIssueId: undefined,
-      revealVotes: false,
-    };
-    
-    storeRoom(updatedRoom);
+    try {
+      const socket = connectSocket();
+      socket.emit('finalize-estimation', { roomId, issueId, value });
+    } catch (error) {
+      console.error('Error finalizing estimation:', error);
+      throw error;
+    }
   },
 
   // Host actions
   transferHost: async (roomId: string, newHostId: string): Promise<void> => {
-    console.log(`Transferring host to user ${newHostId} in room ${roomId}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return;
-    
-    const updatedParticipants = existingRoom.participants.map(p => ({
-      ...p,
-      isHost: p.id === newHostId,
-    }));
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      participants: updatedParticipants,
-    };
-    
-    storeRoom(updatedRoom);
+    try {
+      const socket = connectSocket();
+      socket.emit('transfer-host', { roomId, newHostId });
+    } catch (error) {
+      console.error('Error transferring host:', error);
+      throw error;
+    }
   },
   
   removeParticipant: async (roomId: string, userId: string): Promise<void> => {
-    console.log(`Removing participant ${userId} from room ${roomId}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return;
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      participants: existingRoom.participants.filter(p => p.id !== userId),
-      votes: existingRoom.votes.filter(v => v.userId !== userId),
-    };
-    
-    storeRoom(updatedRoom);
+    try {
+      const socket = connectSocket();
+      socket.emit('remove-participant', { roomId, userId });
+    } catch (error) {
+      console.error('Error removing participant:', error);
+      throw error;
+    }
   },
 
   modifyVote: async (
@@ -267,25 +217,22 @@ export const api = {
     issueId: string, 
     value: number
   ): Promise<void> => {
-    console.log(`Host modifying vote for user ${userId} on issue ${issueId} to ${value}`);
-    
-    const existingRoom = getStoredRoom(roomId);
-    if (!existingRoom) return;
-    
-    const otherVotes = existingRoom.votes.filter(
-      v => !(v.userId === userId && v.issueId === issueId)
-    );
-    
-    const updatedRoom: Room = {
-      ...existingRoom,
-      votes: [...otherVotes, { userId, issueId, value }],
-    };
-    
-    storeRoom(updatedRoom);
+    try {
+      const socket = connectSocket();
+      socket.emit('modify-vote', { roomId, userId, issueId, value });
+    } catch (error) {
+      console.error('Error modifying vote:', error);
+      throw error;
+    }
   },
   
-  // New method to check for room updates
-  checkForUpdates: async (roomId: string): Promise<Room | null> => {
-    return getStoredRoom(roomId);
+  // Method to listen for room updates
+  listenForUpdates: (roomId: string, callback: (room: Room) => void): void => {
+    setupRoomListeners(roomId, callback);
+  },
+  
+  // Method to stop listening for room updates
+  stopListening: (roomId: string): void => {
+    removeRoomListeners(roomId);
   }
 };
